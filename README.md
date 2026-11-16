@@ -140,6 +140,33 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Install
 
 > 如果 `setup.ps1` 提示 `sdkmanager not found`：Android Studio → SDK Manager → SDK Tools → 勾选 "Android SDK Command-line Tools" 装上再跑。
 
+### 3.1 GPU（Vulkan）变体
+
+默认构建是纯 CPU。要出带 GPU 后端的包：
+
+```powershell
+# 1) 准备宿主工具链：MinGW-w64(msvcrt) 用来编 shader 生成器，glslc 用 NDK 自带的
+powershell -ExecutionPolicy Bypass -File scripts\setup-vulkan.ps1
+
+# 2) 出 APK（Vulkan 后端会让首次编译多花 10 分钟左右：161 个 shader 要现场编成 SPIR-V）
+gradle :app:assembleRelease -Pqwenpaint.vulkan=true
+```
+
+为什么需要 MinGW：ggml 的 Vulkan 后端要先把 `vulkan-shaders/*.comp` 编成 SPIR-V，
+这一步靠一个**在宿主上运行**的生成器 `vulkan-shaders-gen.exe`，交叉编译时不能拿
+Android 的 clang 去编它。相关逻辑都在 `app/src/main/cpp/cmake/` 里：
+
+| 文件 | 作用 |
+| --- | --- |
+| `FindVulkan.cmake` | NDK 没有 Vulkan 的 CMake 包，这里补一个：sysroot 的 `libvulkan.so`（取 api28 的存根，因为 ggml 用到了 Vulkan 1.1 的 `vkGetPhysicalDeviceFeatures2`）+ 宿主 `glslc.exe` |
+| `SPIRV-HeadersConfig.cmake` | 满足 ggml 的 `find_package(SPIRV-Headers CONFIG REQUIRED)` |
+| `host-toolchain.cmake.in` | 让 shader 生成器用 MinGW 而不是 Android 工具链编出来，并静态链接（换机器不会缺 dll） |
+
+`app/src/main/cpp/third_party/vulkan/` 里内置了 Vulkan-Hpp 与 SPIR-V 头文件——NDK
+只带 C 头，`ggml-vulkan-types.h` 需要 `vulkan/vulkan.hpp`。
+
+运行时行为：装了 GPU 版后，模型卡片会多出「计算设备」，默认 GPU；加载失败自动退回 CPU。
+
 ---
 
 ## 4. 装进卓易通
