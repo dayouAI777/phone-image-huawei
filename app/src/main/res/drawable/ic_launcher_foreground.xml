@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 外环 -->
+    <path
+        android:fillColor="#7C6CFF"
+        android:pathData="M54,26a28,28 0 1,0 0,56a28,28 0 1,0 0,-56zM54,38a16,16 0 1,1 0,32a16,16 0 1,1 0,-32z" />
+    <!-- 中心点 -->
+    <path
+        android:fillColor="#39D2C0"
+        android:pathData="M54,46a8,8 0 1,0 0,16a8,8 0 1,0 0,-16z" />
+    <!-- 右上高光点 -->
+    <path
+        android:fillColor="#39D2C0"
+        android:pathData="M78,26a5,5 0 1,0 0,10a5,5 0 1,0 0,-10z" />
+</vector>

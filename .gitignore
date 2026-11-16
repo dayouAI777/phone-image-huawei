@@ -1,0 +1,22 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+models/
+__pycache__/
+*.part
+
+# 本地工具链与源码包（体积大，见 README 重新获取）
+tools/
+out/
+*.zip
+
+# keystore 例外：签名必须随仓库分发，否则换机器构建会签名不一致
+!keystore/
+!keystore/*.jks
+.kotlin/
