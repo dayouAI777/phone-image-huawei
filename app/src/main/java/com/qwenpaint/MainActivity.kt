@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -156,7 +157,9 @@ private fun AppScreen(vm: GenViewModel) {
                 versionName = BuildConfig.VERSION_NAME,
                 checkingUpdate = state.checkingUpdate,
                 updateProgress = state.updateProgress,
+                selfTesting = state.selfTesting,
                 onCheckUpdate = { vm.checkUpdate(silent = false) },
+                onSelfTest = vm::selfTest,
                 onProbe = vm::probeHardware,
             )
 
@@ -305,6 +308,32 @@ private fun AppScreen(vm: GenViewModel) {
                 )
             }
 
+            // 性能自检报告
+            state.selfTestReport?.let { report ->
+                AlertDialog(
+                    onDismissRequest = vm::dismissSelfTest,
+                    confirmButton = {
+                        TextButton(onClick = vm::dismissSelfTest) { Text("关闭") }
+                    },
+                    title = { Text("性能自检结果", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            Text(
+                                report,
+                                fontSize = 12.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                lineHeight = 17.sp,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "最快的一组已自动生效，可以直接去生成。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                )
+            }
             state.importProgress?.let { p ->
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("正在导入模型 ${(p * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -387,7 +416,9 @@ private fun Header(
     versionName: String,
     checkingUpdate: Boolean,
     updateProgress: Float?,
+    selfTesting: Boolean,
     onCheckUpdate: () -> Unit,
+    onSelfTest: () -> Unit,
     onProbe: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -428,11 +459,20 @@ private fun Header(
                 }
             }
         }
-        // 第二行是纯文字入口，三个按钮合计约 210dp，任何机型都放得下。
+        // 第二行是纯文字入口。放不下时可以左右滑，任何宽度都不会被裁掉。
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            TextButton(
+                onClick = onSelfTest,
+                enabled = !selfTesting,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(if (selfTesting) "自检中…" else "性能自检", fontSize = 12.sp)
+            }
             TextButton(
                 onClick = onCheckUpdate,
                 enabled = !checkingUpdate && updateProgress == null,
@@ -446,7 +486,6 @@ private fun Header(
             ) {
                 Text("硬件探测", fontSize = 12.sp)
             }
-            Spacer(Modifier.weight(1f))
             TextButton(
                 onClick = {
                     runCatching {
@@ -674,8 +713,8 @@ private fun ModelCard(
                     )
                 }
                 Text(
-                    if (state.useGpu) "走 Maleoon GPU 做矩阵运算，通常快数倍；显存不够会自动退回 CPU"
-                    else "纯 CPU（NEON）推理，慢但稳，适合大分辨率或显存紧张时",
+                    if (state.useGpu) "实测若比 CPU 慢，说明 Vulkan 有算子退回 CPU，点上面「性能自检」会自动选出快的那个"
+                    else "纯 CPU（NEON）推理，当前默认，512×512 四步约 1 分钟",
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

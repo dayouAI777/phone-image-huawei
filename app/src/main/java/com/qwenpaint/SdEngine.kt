@@ -101,10 +101,11 @@ object SdEngine {
         cfg: Float,
         seed: Long,
         method: String = "euler",
+        vaeTiling: Boolean = false,
     ): Bitmap? {
         val h = handle
         if (h == 0L) return null
-        val pixels = nativeGenerate(h, prompt, negativePrompt, width, height, steps, cfg, seed, method)
+        val pixels = nativeGenerate(h, prompt, negativePrompt, width, height, steps, cfg, seed, method, vaeTiling)
             ?: return null
         if (pixels.isEmpty()) return null
         return try {
@@ -166,12 +167,30 @@ object SdEngine {
         cfg: Float,
         seed: Long,
         method: String,
+        vaeTiling: Boolean,
     ): IntArray?
 
     private external fun nativeCancel(handle: Long)
     private external fun nativeFree(handle: Long)
     private external fun nativeVersion(): String
     private external fun nativeLastTiming(): String
+
+    /** 上一次生成的单步采样耗时（秒），-1 表示没采到 */
+    fun lastStepSec(): Float = try {
+        if (loaded) nativeLastStepSec() else -1f
+    } catch (t: Throwable) {
+        -1f
+    }
+
+    /** 上一次生成里「采样结束 → 出图」那段（VAE 解码）耗时（秒） */
+    fun lastTailSec(): Float = try {
+        if (loaded) nativeLastTailSec() else -1f
+    } catch (t: Throwable) {
+        -1f
+    }
+
+    private external fun nativeLastStepSec(): Float
+    private external fun nativeLastTailSec(): Float
     private external fun nativeProbeHardware(): String
     private external fun nativeListDevices(): String
 

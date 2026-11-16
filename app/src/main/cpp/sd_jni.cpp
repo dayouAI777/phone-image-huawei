@@ -36,6 +36,11 @@ std::chrono::steady_clock::time_point g_genStart;
 std::atomic<bool>  g_firstStepSeen{false};
 std::atomic<float> g_encodeSec{-1.f};
 std::atomic<float> g_lastStepAt{-1.f};
+// 采样阶段平均每步耗时，供「性能自检」直接读取，不必解析字符串
+std::atomic<float> g_lastStepAvg{-1.f};
+std::atomic<float> g_lastTailSec{-1.f};
+// sdcpp 进度回调里给的 time 就是 s/it（src/core/util.cpp），最权威的单步耗时
+std::atomic<float> g_sdcppStepSec{-1.f};
 
 struct EngineHandle {
     sd_ctx_t* ctx = nullptr;
@@ -80,6 +85,7 @@ void onProgress(int step, int steps, float time, void* /*data*/) {
     }
     g_lastStepAt.store(std::chrono::duration<float>(
         std::chrono::steady_clock::now() - g_genStart).count());
+    if (time > 0.f) g_sdcppStepSec.store(time);
     pushProgress(step, steps, time, "sampling");
 }
 
@@ -155,6 +161,18 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_qwenpaint_SdEngine_nativeLastTiming(JNIEnv* env, jobject /*thiz*/) {
     std::lock_guard<std::mutex> lk(g_timingMutex);
     return env->NewStringUTF(g_lastTiming.c_str());
+}
+
+// 单步采样耗时（秒），-1 表示本次没有采到；供「性能自检」用，免去解析字符串
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_qwenpaint_SdEngine_nativeLastStepSec(JNIEnv* /*env*/, jobject /*thiz*/) {
+    return static_cast<jfloat>(g_lastStepAvg.load());
+}
+
+// 采样结束到出图（VAE 解码）那段耗时，秒
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_qwenpaint_SdEngine_nativeLastTailSec(JNIEnv* /*env*/, jobject /*thiz*/) {
+    return static_cast<jfloat>(g_lastTailSec.load());
 }
 
 // Enumerates the ggml devices compiled into this .so (CPU always, Vulkan when the
@@ -279,7 +297,8 @@ Java_com_qwenpaint_SdEngine_nativeGenerate(JNIEnv* env, jobject /*thiz*/,
                                            jint    jSteps,
                                            jfloat  jCfg,
                                            jlong   jSeed,
-                                           jstring jMethod) {
+                                           jstring jMethod,
+                                           jboolean jVaeTiling) {
     EngineHandle* h = reinterpret_cast<EngineHandle*>(jHandle);
     if (h == nullptr || h->ctx == nullptr) {
         throwRuntime(env, "engine not initialized");
@@ -314,7 +333,8 @@ Java_com_qwenpaint_SdEngine_nativeGenerate(JNIEnv* env, jobject /*thiz*/,
     ok = ok && setStr(opt, "sample.method", method.empty() ? std::string("euler") : method);
     setFloat(opt, "sample.guidance.txt_cfg", static_cast<double>(jCfg));
     setFloat(opt, "sample.guidance.distilled_guidance", static_cast<double>(jCfg));
-    setBool(opt, "vae_tiling.enabled", true);
+    // 分块解码在 CPU 上是净损失（每块都要重叠重算），只有真的内存吃紧才值得开
+    setBool(opt, "vae_tiling.enabled", jVaeTiling == JNI_TRUE);
 
     if (!ok) {
         sd_opt_free(opt);
@@ -393,16 +413,23 @@ Java_com_qwenpaint_SdEngine_nativeGenerate(JNIEnv* env, jobject /*thiz*/,
     {
         const float enc  = g_encodeSec.load();
         const float last = g_lastStepAt.load();
+        // 首步回调时 enc 已经把第 1 步算完了，所以 last-enc 是 (steps-1) 步的时间
         const float sampleSec = (last > 0.f && enc >= 0.f) ? (last - enc) : -1.f;
         const float tailSec   = (last > 0.f) ? (totalSec - last) : totalSec;
+        float sep = g_sdcppStepSec.load();
+        if (sep <= 0.f && jSteps > 1 && sampleSec > 0.f) {
+            sep = sampleSec / static_cast<float>(jSteps - 1);
+        }
+        const float sampleTotal = sep > 0.f ? sep * static_cast<float>(jSteps) : sampleSec;
+        g_lastStepAvg.store(sep);
+        g_lastTailSec.store(tailSec);
         char buf[192];
         if (enc >= 0.f) {
             std::snprintf(buf, sizeof(buf),
                           "总 %.1fs · 文本编码 %.1fs · 采样 %d 步 %.1fs（%.1fs/步）· 出图 %.1fs",
                           totalSec, enc, static_cast<int>(jSteps),
-                          sampleSec < 0.f ? 0.f : sampleSec,
-                          (jSteps > 0 && sampleSec > 0.f)
-                              ? sampleSec / static_cast<float>(jSteps) : 0.f,
+                          sampleTotal < 0.f ? 0.f : sampleTotal,
+                          sep > 0.f ? sep : 0.f,
                           tailSec < 0.f ? 0.f : tailSec);
         } else {
             std::snprintf(buf, sizeof(buf), "总 %.1fs", totalSec);

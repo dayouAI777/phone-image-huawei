@@ -1,13 +1,13 @@
 {
-  "versionCode": 8,
-  "versionName": "1.6.0",
-  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.6.0/qwenpaint-v1.6.0.apk",
+  "versionCode": 9,
+  "versionName": "1.7.0",
+  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.7.0/qwenpaint-v1.7.0.apk",
   "mirrors": [
-    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.6.0/qwenpaint-v1.6.0.apk",
-    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.6.0/qwenpaint-v1.6.0.apk"
+    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.7.0/qwenpaint-v1.7.0.apk",
+    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.7.0/qwenpaint-v1.7.0.apk"
   ],
-  "sha256": "da7a6108087295f910192030e5f9194ae8ff5ac08b54ed7eff7e1a9030b24d70",
-  "size": 32971214,
-  "notes": "① 支持中文提示词了：SD-Turbo 的 CLIP 只认英文，所以内置了一份约 300 条的中英词表，边输入边显示转换结果（认不出的词会提示）。② 新增「预计耗时」：按上次实测的每步秒数 × 步数 × 分辨率比例估算，超 2 分钟直接标红提示。③ 想压进 2 分钟：512×512 + 4 步最稳。覆盖安装，模型保留。",
+  "sha256": "ca3df4656ffd40f424e03f2e2f599164d50843c9d76a46154a74f193f2f95baa",
+  "size": 32975442,
+  "notes": "提速版：① 计算设备默认改成 CPU，并把线程数固定 4——之前的 45 秒一步基本可以确定是 Vulkan 后端在 Maleoon 上大量算子退回 CPU 造成的，越跑越慢。② VAE 出图不再分块（那一段很可能是 522 秒里的大头）。③ 新增「性能自检」：自动把 CPU 4/8 线程、GPU 三种配置各跑一遍，直接给出每步秒数和出图耗时，并把最快的一组自动设为当前配置。④ 出图后三段时间拆解更准。覆盖安装，模型保留。",
   "force": false
 }

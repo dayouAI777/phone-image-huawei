@@ -23,7 +23,9 @@ data class UiState(
     val policy: MemPolicy = MemPolicy.BALANCED,
     // ---- 计算设备（GPU / CPU）----
     val gpuAvailable: Boolean = false,
-    val useGpu: Boolean = true,
+    // GPU 默认关闭：Vulkan 后端在 Maleoon 上实测没有加速，反而因为算子回退更慢，
+    // 先按 CPU 出图，等自检数据出来再决定是否默认打开。
+    val useGpu: Boolean = false,
     val deviceNames: List<Pair<String, String>> = emptyList(),
     val engineReady: Boolean = false,
     val loadingModel: Boolean = false,
@@ -36,6 +38,9 @@ data class UiState(
     val lastStepSeconds: Float = 0f,
     val lastPixels: Int = 0,
     val userThreads: Int = 4,
+    // ---- 性能自检 ----
+    val selfTesting: Boolean = false,
+    val selfTestReport: String? = null,
     val image: Bitmap? = null,
     val lastSeed: Long = -1L,
     val isTurbo: Boolean = true,
@@ -64,6 +69,8 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         SdEngine.setProgressListener { completed, total, seconds, stage ->
+            // 自检期间也在走同一个回调，别让它搅乱正式生成的进度显示
+            if (_state.value.selfTesting) return@setProgressListener
             _state.update {
                 it.copy(
                     progressCompleted = completed,
@@ -83,7 +90,9 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
             val devices = withContext(Dispatchers.IO) { SdEngine.listDevices() }
             val hasGpu = devices.any { it.first.contains("vulkan", ignoreCase = true) }
             _state.update {
-                it.copy(gpuAvailable = hasGpu, useGpu = hasGpu, deviceNames = devices)
+                // 注意不要在这里把 useGpu 打开：GPU 路径在 Maleoon 上实测更慢，
+                // 只有「性能自检」测出 GPU 更快、或用户手动勾选时才用。
+                it.copy(gpuAvailable = hasGpu, useGpu = it.useGpu && hasGpu, deviceNames = devices)
             }
         }
     }
@@ -117,6 +126,118 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(userThreads = threads, message = "线程数设为 ${threads}，重新加载模型后生效")
         }
+    }
+
+    /**
+     * 一键自检：把「CPU/GPU × 线程数」几组候选各跑 2 步 256×256，直接量出
+     * 每步耗时 / 出图耗时 / 加载耗时，最后自动把最快的一组设成当前配置。
+     * 384×384 以下的单步耗时基本和面积成正比，所以小图测出来的比例可以直接外推。
+     */
+    fun selfTest() {
+        val st = _state.value
+        val set = st.currentSet
+        if (set == null || !set.ready) {
+            _state.update { it.copy(error = "请先导入模型") }
+            return
+        }
+        if (st.selfTesting || st.generating || st.loadingModel) return
+
+        // 候选组合：CPU 是基本盘，GPU 只在 so 里真的编进去时才测
+        val candidates = mutableListOf(
+            Triple("cpu", 4, "CPU · 4 线程"),
+            Triple("cpu", 8, "CPU · 8 线程"),
+        )
+        if (st.gpuAvailable) candidates += Triple("vulkan", 4, "GPU · Vulkan · 4 线程")
+
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    selfTesting = true, selfTestReport = null, error = null, engineReady = false,
+                    message = "性能自检中（${candidates.size} 组配置），请勿锁屏…",
+                )
+            }
+            val lines = mutableListOf<String>()
+            var bestBackend = "cpu"
+            var bestThreads = 4
+            var bestStep = Float.MAX_VALUE
+
+            for ((backend, th, label) in candidates) {
+                val cfg = set.toConfig(st.policy, th, backend)
+                val t0 = System.currentTimeMillis()
+                val loaded = withContext(Dispatchers.Default) { SdEngine.loadModel(cfg) }
+                val loadSec = (System.currentTimeMillis() - t0) / 1000f
+                if (loaded.isFailure) {
+                    val msg = loaded.exceptionOrNull()?.message?.replace('\n', ' ')?.take(70) ?: "未知原因"
+                    lines += "$label\n    加载失败：$msg"
+                    continue
+                }
+                _state.update { it.copy(message = "自检中：$label 出图中…") }
+
+                val g0 = System.currentTimeMillis()
+                val bmp = withContext(Dispatchers.Default) {
+                    try {
+                        SdEngine.generate("a cat", "", 256, 256, 2, 1.0f, 42L, "euler", false)
+                    } catch (t: Throwable) {
+                        null
+                    }
+                }
+                val genSec = (System.currentTimeMillis() - g0) / 1000f
+                if (bmp == null) {
+                    lines += "$label\n    出图失败"
+                    continue
+                }
+                val sep = SdEngine.lastStepSec()
+                val tail = SdEngine.lastTailSec()
+                // 折算到 512×512：面积比 4 倍、4 步，用来横向比较
+                val est512 = if (sep > 0f) sep * 4f * (512f * 512f / (256f * 256f)) else -1f
+                lines += buildString {
+                    append(label)
+                    append("\n    ").append(fmt(sep)).append("s/步")
+                    append(" · 出图 ").append(fmt(tail)).append("s")
+                    append(" · 加载 ").append(fmt(loadSec)).append("s")
+                    if (est512 > 0f) append("\n    折算 512×512×4 步 ≈ ").append(fmt(est512 + tail)).append("s")
+                }
+                if (sep > 0f && sep < bestStep) {
+                    bestStep = sep
+                    bestBackend = backend
+                    bestThreads = th
+                }
+            }
+
+            // 用最快的一组重新加载，省得用户还得再等一次
+            var ready = false
+            if (bestStep < Float.MAX_VALUE) {
+                _state.update { it.copy(message = "自检完成，正在加载最快配置…") }
+                val bestCfg = set.toConfig(st.policy, bestThreads, bestBackend)
+                ready = withContext(Dispatchers.Default) { SdEngine.loadModel(bestCfg) }.isSuccess
+                threads = bestThreads
+            }
+
+            val header = if (bestStep < Float.MAX_VALUE) {
+                val name = if (bestBackend == "vulkan") "GPU (Vulkan)" else "CPU"
+                "最快：$name · $bestThreads 线程（${fmt(bestStep)}s/步 @256×256）"
+            } else {
+                "全部配置都失败，请把下面的信息发我"
+            }
+            _state.update {
+                it.copy(
+                    selfTesting = false,
+                    engineReady = ready,
+                    useGpu = bestBackend == "vulkan",
+                    userThreads = bestThreads,
+                    selfTestReport = header + "\n\n" + lines.joinToString("\n\n") +
+                        "\n\n注：256×256 仅用于横向比较，实际 512×512 约为其 4 倍面积。",
+                    message = if (ready) "自检完成，已切到最快配置" else null,
+                )
+            }
+        }
+    }
+
+    private fun fmt(v: Float): String =
+        if (v < 0f) "—" else String.format(java.util.Locale.US, "%.1f", v)
+
+    fun dismissSelfTest() {
+        _state.update { it.copy(selfTestReport = null) }
     }
 
     fun importModel(uri: Uri) {
@@ -237,7 +358,11 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
             }
             val bitmap = withContext(Dispatchers.Default) {
                 try {
-                    SdEngine.generate(prompt, negative, width, height, steps, cfg, actualSeed, "euler")
+                    SdEngine.generate(
+                        prompt, negative, width, height, steps, cfg, actualSeed, "euler",
+                        // 只有「省内存」档才开 VAE 分块；分块在 CPU 上要重算重叠区，纯亏时间
+                        vaeTiling = st.policy == MemPolicy.SAFE,
+                    )
                 } catch (t: Throwable) {
                     _state.update { it.copy(error = t.message ?: "生成异常") }
                     null
