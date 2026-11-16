@@ -1,7 +1,9 @@
 package com.qwenpaint
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -148,6 +151,7 @@ private fun AppScreen(vm: GenViewModel) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Header(
+                versionName = BuildConfig.VERSION_NAME,
                 checkingUpdate = state.checkingUpdate,
                 updateProgress = state.updateProgress,
                 onCheckUpdate = { vm.checkUpdate(silent = false) },
@@ -343,54 +347,85 @@ private fun AppScreen(vm: GenViewModel) {
 
 @Composable
 private fun Header(
+    versionName: String,
     checkingUpdate: Boolean,
     updateProgress: Float?,
     onCheckUpdate: () -> Unit,
     onProbe: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // 第一行只放标题和图标按钮。图标固定 40dp，窄屏下也不会把入口挤出屏幕。
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "QwenPaint",
-                    fontSize = 26.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
-                Spacer(Modifier.width(8.dp))
                 Text(
-                    "端侧离线生图",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(bottom = 4.dp),
+                    "端侧离线生图 · v$versionName · 图片不出本机",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = onProbe,
-                ) {
-                    Text("硬件探测", fontSize = 12.sp)
-                }
-                TextButton(
-                    onClick = onCheckUpdate,
-                    enabled = !checkingUpdate && updateProgress == null,
-                ) {
-                    Text(
-                        if (checkingUpdate) "检查中…" else "检查更新",
-                        fontSize = 12.sp,
+            IconButton(
+                onClick = onCheckUpdate,
+                enabled = !checkingUpdate && updateProgress == null,
+            ) {
+                if (checkingUpdate) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "检查更新",
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
         }
-        Text(
-            "全程本地推理，不联网、不上传",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // 第二行是纯文字入口，三个按钮合计约 210dp，任何机型都放得下。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(
+                onClick = onCheckUpdate,
+                enabled = !checkingUpdate && updateProgress == null,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(if (checkingUpdate) "检查中…" else "检查更新", fontSize = 12.sp)
+            }
+            TextButton(
+                onClick = onProbe,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text("硬件探测", fontSize = 12.sp)
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/dayouAI777/phone-image-huawei/releases/latest"),
+                            )
+                        )
+                    }
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text("手动下载", fontSize = 12.sp)
+            }
+        }
     }
 }
 
