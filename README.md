@@ -78,8 +78,11 @@ qwen-paint/
 │   │   ├── GenViewModel.kt     # 状态机
 │   │   ├── SdEngine.kt         # JNI 封装
 │   │   ├── ModelRepository.kt  # 模型导入/管理
+│   │   ├── UpdateManager.kt    # 在线升级：检查/下载/校验/安装
 │   │   └── ui/Theme.kt
 │   └── res/
+├── keystore/qwenpaint.jks      # 固定签名（随仓库分发，保证覆盖安装）
+├── release/version.json        # 版本清单（App 启动时拉取它判断是否有新版）
 └── scripts/
     ├── setup.ps1               # 装 NDK / 拉内核 / 写 local.properties
     ├── build.ps1               # 出 APK / 推模型 / adb 安装
@@ -87,6 +90,30 @@ qwen-paint/
 ```
 
 ---
+
+## 2.5 在线升级机制
+
+```
+App 启动/点「检查更新」
+   │  按序尝试 3 个镜像拉 release/version.json（gh-proxy → ghfast → 直连）
+   ▼
+versionCode > 本地？ ──否──→ 已是最新
+   │是
+   ▼  顶部横幅提示
+「下载并安装」
+   │  APK 断点续传（Range）+ 镜像轮替 + 每镜像 3 次退避重试
+   ▼
+size / SHA256 校验（不过则删除重下，最多 2 轮）
+   ▼
+FileProvider 调起系统安装器 → 覆盖安装
+```
+
+关键点：
+
+- **固定签名**：`keystore/qwenpaint.jks` 随仓库分发（storepass/keypass 均为 `qwenpaint2026`），任何机器构建出的包签名一致，覆盖安装不会触发「签名不一致需先卸载」——**模型数据（/files/models，约 1.9GB）在升级后保留**。
+- **版本清单** `release/version.json`：发新版时改 `versionCode/versionName/url/sha256/size/notes` 并提交，同时在 GitHub Releases 上传同名 APK 附件。
+- **镜像**：清单和 APK 下载都内置 `gh-proxy.com`、`ghfast.top` 两个国内加速镜像，直连失败自动切换，下载中断自动续传。
+- Android 8+ 首次覆盖安装会弹「允许安装未知应用」，授权后回 App 再点一次「立即安装」即可。
 
 ## 3. 构建（Windows）
 
