@@ -1,13 +1,13 @@
 {
-  "versionCode": 7,
-  "versionName": "1.5.0",
-  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.5.0/qwenpaint-v1.5.0.apk",
+  "versionCode": 8,
+  "versionName": "1.6.0",
+  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.6.0/qwenpaint-v1.6.0.apk",
   "mirrors": [
-    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.5.0/qwenpaint-v1.5.0.apk",
-    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.5.0/qwenpaint-v1.5.0.apk"
+    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.6.0/qwenpaint-v1.6.0.apk",
+    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.6.0/qwenpaint-v1.6.0.apk"
   ],
-  "sha256": "54d45353e395a651966b022548cdee7b30a33b51b4db5597ed738e7b85e2ba7f",
-  "size": 32960594,
-  "notes": "这次冲速度：① 生成时显示每步耗时，出图后给出「文本编码 / 采样 / 出图」三段耗时，慢在哪一眼看得到；② 新增线程数 4/6/8 可选，麒麟 9020 是 4 大核 + 4 小核，默认改成只用 4 个大核；③ 384×384 小图档位可用。覆盖安装，模型保留。",
+  "sha256": "da7a6108087295f910192030e5f9194ae8ff5ac08b54ed7eff7e1a9030b24d70",
+  "size": 32971214,
+  "notes": "① 支持中文提示词了：SD-Turbo 的 CLIP 只认英文，所以内置了一份约 300 条的中英词表，边输入边显示转换结果（认不出的词会提示）。② 新增「预计耗时」：按上次实测的每步秒数 × 步数 × 分辨率比例估算，超 2 分钟直接标红提示。③ 想压进 2 分钟：512×512 + 4 步最稳。覆盖安装，模型保留。",
   "force": false
 }

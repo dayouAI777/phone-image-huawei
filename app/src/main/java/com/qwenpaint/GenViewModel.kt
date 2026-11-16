@@ -33,6 +33,8 @@ data class UiState(
     val progressStage: String = "",
     val stepSeconds: Float = 0f,
     val lastTiming: String = "",
+    val lastStepSeconds: Float = 0f,
+    val lastPixels: Int = 0,
     val userThreads: Int = 4,
     val image: Bitmap? = null,
     val lastSeed: Long = -1L,
@@ -230,6 +232,7 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
                     generating = true, error = null, message = null,
                     progressCompleted = 0, progressTotal = steps, progressStage = "准备中",
                     lastSeed = actualSeed,
+                    lastPixels = width * height,
                 )
             }
             val bitmap = withContext(Dispatchers.Default) {
@@ -246,6 +249,7 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
                     image = bitmap ?: it.image,
                     progressStage = if (bitmap != null) "完成" else "",
                     stepSeconds = 0f,
+                    lastStepSeconds = if (it.stepSeconds > 0f) it.stepSeconds else it.lastStepSeconds,
                     lastTiming = if (bitmap != null) SdEngine.lastTiming() else it.lastTiming,
                     message = if (bitmap != null) "seed = $actualSeed" else it.message,
                 )

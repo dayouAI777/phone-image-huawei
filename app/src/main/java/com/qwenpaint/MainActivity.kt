@@ -55,6 +55,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -115,6 +116,7 @@ private fun AppScreen(vm: GenViewModel) {
     var steps by rememberSaveable { mutableStateOf(4) }
     var cfg by rememberSaveable { mutableStateOf(1.0f) }
     var seedText by rememberSaveable { mutableStateOf("-1") }
+    var autoTranslate by rememberSaveable { mutableStateOf(true) }
 
     // Turbo 模型与常规模型的最佳参数差异很大，切换时自动纠正
     LaunchedEffect(state.isTurbo) {
@@ -184,6 +186,8 @@ private fun AppScreen(vm: GenViewModel) {
                 onNegativeChange = { negative = it },
                 showAdvanced = showAdvanced,
                 onToggleAdvanced = { showAdvanced = !showAdvanced },
+                autoTranslate = autoTranslate,
+                onToggleTranslate = { autoTranslate = it },
             )
 
             ParamCard(
@@ -203,7 +207,13 @@ private fun AppScreen(vm: GenViewModel) {
                 onClick = {
                     val (w, h) = SIZES[sizeIndex].second
                     val seed = seedText.trim().toLongOrNull() ?: -1L
-                    vm.generate(prompt, negative, w, h, steps, cfg, seed)
+                    // CLIP 只认英文：中文提示词先过一遍本地词表，转不出来就原样交给模型（会提示）
+                    val finalPrompt = if (autoTranslate && ZhPrompt.hasChinese(prompt)) {
+                        ZhPrompt.translate(prompt) ?: prompt
+                    } else {
+                        prompt
+                    }
+                    vm.generate(finalPrompt, negative, w, h, steps, cfg, seed)
                 },
                 enabled = state.engineReady && !state.generating && !state.loadingModel,
                 modifier = Modifier
@@ -234,6 +244,23 @@ private fun AppScreen(vm: GenViewModel) {
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+            }
+
+            // 用上一次的实测单步耗时预估本次，改参数时不用反复试错
+            if (state.lastStepSeconds > 0f && state.lastPixels > 0) {
+                val (curW, curH) = SIZES[sizeIndex].second
+                val est = state.lastStepSeconds * (curW * curH).toFloat() / state.lastPixels * steps + 12f
+                val over = est > 120f
+                Text(
+                    buildString {
+                        append("预计 ${est.toInt()} 秒")
+                        if (over) append("，已超 2 分钟 —— 降到 512×512 或减少步数")
+                        append("　（上次实测 ${"%.1f".format(state.lastStepSeconds)} 秒/步）")
+                    },
+                    fontSize = 11.sp,
+                    color = if (over) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             if (state.generating) {
@@ -753,22 +780,55 @@ private fun PromptCard(
     onNegativeChange: (String) -> Unit,
     showAdvanced: Boolean,
     onToggleAdvanced: () -> Unit,
+    autoTranslate: Boolean,
+    onToggleTranslate: (Boolean) -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(18.dp),
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("提示词", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("提示词", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                // SD-Turbo 的 CLIP 只认英文，中文提示词走本地词表转换
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "中文自动转英文",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Switch(
+                        checked = autoTranslate,
+                        onCheckedChange = onToggleTranslate,
+                        modifier = Modifier.padding(start = 2.dp),
+                    )
+                }
+            }
             OutlinedTextField(
                 value = prompt,
                 onValueChange = onPromptChange,
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 maxLines = 6,
-                placeholder = { Text("描述你想要的画面，英文效果最佳", fontSize = 13.sp) },
+                placeholder = { Text("描述你想要的画面，中文会自动转英文", fontSize = 13.sp) },
                 shape = RoundedCornerShape(12.dp),
             )
+            // 实时显示转换结果，用户能自己判断词有没有被认出来
+            if (autoTranslate && ZhPrompt.hasChinese(prompt)) {
+                val translated = ZhPrompt.translate(prompt)
+                Text(
+                    if (translated != null) "→ $translated"
+                    else "→ 没认出中文关键词。用「女孩 / 海边 / 黄金时刻 / 赛博朋克」这类常见词，或直接用英文",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = if (translated != null) MaterialTheme.colorScheme.secondary
+                    else MaterialTheme.colorScheme.error,
+                )
+            }
             TextButton(
                 onClick = onToggleAdvanced,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),

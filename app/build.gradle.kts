@@ -6,8 +6,8 @@ plugins {
 
 // -Pqwenpaint.vulkan=true 编出带 ggml Vulkan 后端的 so（Maleoon GPU 路径）
 val useVulkan: Boolean = (project.findProperty("qwenpaint.vulkan") as String?)?.toBoolean() ?: false
-val versionCodeValue: Int = (project.findProperty("qwenpaint.versionCode") as String?)?.toInt() ?: 7
-val versionNameValue: String = (project.findProperty("qwenpaint.versionName") as String?) ?: "1.5.0"
+val versionCodeValue: Int = (project.findProperty("qwenpaint.versionCode") as String?)?.toInt() ?: 8
+val versionNameValue: String = (project.findProperty("qwenpaint.versionName") as String?) ?: "1.6.0"
 
 android {
     namespace = "com.qwenpaint"
