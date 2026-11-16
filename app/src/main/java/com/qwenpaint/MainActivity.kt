@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -150,6 +151,7 @@ private fun AppScreen(vm: GenViewModel) {
                 checkingUpdate = state.checkingUpdate,
                 updateProgress = state.updateProgress,
                 onCheckUpdate = { vm.checkUpdate(silent = false) },
+                onProbe = vm::probeHardware,
             )
 
             UpdateBanner(
@@ -242,6 +244,33 @@ private fun AppScreen(vm: GenViewModel) {
                 state.message?.let { NoticeCard(it, isError = false, onClose = vm::clearMessages) }
             }
 
+            // 硬件探测报告
+            state.hwProbe?.let { report ->
+                AlertDialog(
+                    onDismissRequest = vm::dismissProbe,
+                    confirmButton = {
+                        TextButton(onClick = vm::dismissProbe) { Text("关闭") }
+                    },
+                    title = { Text("硬件接口探测", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            Text(
+                                report,
+                                fontSize = 12.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                lineHeight = 17.sp,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "截图发给开发者即可，不用自己解读。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                )
+            }
+
             state.importProgress?.let { p ->
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("正在导入模型 ${(p * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -316,6 +345,7 @@ private fun Header(
     checkingUpdate: Boolean,
     updateProgress: Float?,
     onCheckUpdate: () -> Unit,
+    onProbe: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
@@ -338,14 +368,21 @@ private fun Header(
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
             }
-            TextButton(
-                onClick = onCheckUpdate,
-                enabled = !checkingUpdate && updateProgress == null,
-            ) {
-                Text(
-                    if (checkingUpdate) "检查中…" else "检查更新",
-                    fontSize = 12.sp,
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = onProbe,
+                ) {
+                    Text("硬件探测", fontSize = 12.sp)
+                }
+                TextButton(
+                    onClick = onCheckUpdate,
+                    enabled = !checkingUpdate && updateProgress == null,
+                ) {
+                    Text(
+                        if (checkingUpdate) "检查中…" else "检查更新",
+                        fontSize = 12.sp,
+                    )
+                }
             }
         }
         Text(

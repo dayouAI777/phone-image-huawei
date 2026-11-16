@@ -1,13 +1,13 @@
 {
-  "versionCode": 3,
-  "versionName": "1.1.0",
-  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.1.0/qwenpaint-v1.1.0.apk",
+  "versionCode": 4,
+  "versionName": "1.2.0",
+  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.2.0/qwenpaint-v1.2.0.apk",
   "mirrors": [
-    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.1.0/qwenpaint-v1.1.0.apk",
-    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.1.0/qwenpaint-v1.1.0.apk"
+    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.2.0/qwenpaint-v1.2.0.apk",
+    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.2.0/qwenpaint-v1.2.0.apk"
   ],
-  "sha256": "8521e5357404108bcb1a7f1c92942f61133577152148b79fe65078c57eed114f",
-  "size": 33490473,
-  "notes": "新增 App 内在线升级：检查更新、断点续传下载、校验后覆盖安装，模型文件保留。修复图片像素重排问题。",
+  "sha256": "7fdbb25593b5e31497e1d2cdebffdfabc98cf8126e92f86448ac7e57421d2368",
+  "size": 33501085,
+  "notes": "新增「硬件探测」：一键检测卓易通容器暴露的 Vulkan/OpenCL 接口，为 GPU 加速可行性提供实测依据。",
   "force": false
 }

@@ -38,6 +38,8 @@ data class UiState(
     val updateProgress: Float? = null,
     val updateReadyApk: File? = null,
     val updateCancel: Boolean = false,
+    // ---- 硬件探测 ----
+    val hwProbe: String? = null,
     val error: String? = null,
     val message: String? = null,
 )
@@ -326,6 +328,19 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissUpdate() {
         _state.update { it.copy(updateInfo = null) }
+    }
+
+    /** 硬件探测：Vulkan/OpenCL 可用性，结果弹窗展示 */
+    fun probeHardware() {
+        viewModelScope.launch {
+            _state.update { it.copy(message = "正在探测硬件接口…") }
+            val report = withContext(Dispatchers.IO) { SdEngine.probeHardware() }
+            _state.update { it.copy(hwProbe = report, message = null) }
+        }
+    }
+
+    fun dismissProbe() {
+        _state.update { it.copy(hwProbe = null) }
     }
 
     fun clearMessages() {

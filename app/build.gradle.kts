@@ -13,8 +13,8 @@ android {
         applicationId = "com.qwenpaint"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.1.0"
+        versionCode = 4
+        versionName = "1.2.0"
 
         ndk {
             // 卓易通容器与真机均为 arm64，只出 arm64-v8a 减小体积

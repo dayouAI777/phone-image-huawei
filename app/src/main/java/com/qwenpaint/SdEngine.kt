@@ -160,4 +160,12 @@ object SdEngine {
     private external fun nativeCancel(handle: Long)
     private external fun nativeFree(handle: Long)
     private external fun nativeVersion(): String
+    private external fun nativeProbeHardware(): String
+
+    /** 探测容器暴露的硬件接口（Vulkan/OpenCL），结果可直接贴给开发者 */
+    fun probeHardware(): String = try {
+        nativeProbeHardware()
+    } catch (t: Throwable) {
+        "探测失败：${t.message}"
+    }
 }

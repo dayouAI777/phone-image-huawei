@@ -361,3 +361,140 @@ Java_com_qwenpaint_SdEngine_nativeFree(JNIEnv* /*env*/, jobject /*thiz*/, jlong 
     delete h;
     LOGI("engine freed");
 }
+
+// ---------------------------------------------------------------- hardware probe
+// 探测卓易通容器到底暴露了什么硬件接口：Vulkan 计算 / OpenCL。
+// 全部走 dlopen 运行时加载，没有对应驱动就明确报“不存在”，不猜。
+
+#include <dlfcn.h>
+#include <vulkan/vulkan.h>
+#include <sstream>
+
+namespace {
+
+std::string probeVulkan() {
+    std::ostringstream out;
+    void* lib = dlopen("libvulkan.so", RTLD_NOW);
+    if (lib == nullptr) {
+        out << "libvulkan.so: 不存在（容器未暴露 Vulkan 驱动）\n";
+        return out.str();
+    }
+    auto fpCreate = reinterpret_cast<PFN_vkCreateInstance>(dlsym(lib, "vkCreateInstance"));
+    auto fpEnum = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(dlsym(lib, "vkEnumeratePhysicalDevices"));
+    auto fpProps = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(dlsym(lib, "vkGetPhysicalDeviceProperties"));
+    auto fpDestroy = reinterpret_cast<PFN_vkDestroyInstance>(dlsym(lib, "vkDestroyInstance"));
+    if (fpCreate == nullptr || fpEnum == nullptr || fpProps == nullptr) {
+        out << "libvulkan.so: 存在但符号不全（残缺驱动）\n";
+        dlclose(lib);
+        return out.str();
+    }
+
+    VkApplicationInfo app{};
+    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.pApplicationName = "qwenpaint-probe";
+    app.apiVersion = VK_API_VERSION_1_1;
+    VkInstanceCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ci.pApplicationInfo = &app;
+    VkInstance inst = VK_NULL_HANDLE;
+    VkResult r = fpCreate(&ci, nullptr, &inst);
+    if (r != VK_SUCCESS || inst == VK_NULL_HANDLE) {
+        out << "vkCreateInstance 失败，VkResult=" << static_cast<int>(r) << "\n";
+        dlclose(lib);
+        return out.str();
+    }
+
+    uint32_t count = 0;
+    fpEnum(inst, &count, nullptr);
+    out << "Vulkan 设备数: " << count << "\n";
+    if (count > 0) {
+        std::vector<VkPhysicalDevice> devs(count);
+        fpEnum(inst, &count, devs.data());
+        const char* typeNames[] = {"OTHER", "INTEGRATED_GPU", "DISCRETE_GPU", "VIRTUAL_GPU", "CPU"};
+        for (uint32_t i = 0; i < count; ++i) {
+            VkPhysicalDeviceProperties p{};
+            fpProps(devs[i], &p);
+            int t = (p.deviceType <= 4) ? p.deviceType : 0;
+            out << "  [" << i << "] " << p.deviceName << "\n"
+                << "      类型=" << typeNames[t]
+                << "  API=" << VK_VERSION_MAJOR(p.apiVersion) << "." << VK_VERSION_MINOR(p.apiVersion)
+                << "  驱动=" << p.driverVersion << "\n";
+        }
+    }
+    if (fpDestroy != nullptr) fpDestroy(inst, nullptr);
+    dlclose(lib);
+    return out.str();
+}
+
+// OpenCL 最小声明（NDK 不带 OpenCL 头文件）
+typedef int32_t cl_int;
+typedef uint32_t cl_uint;
+typedef uint64_t cl_ulong;
+typedef void* cl_platform_id;
+typedef void* cl_device_id;
+typedef void* cl_context;
+
+std::string probeOpenCL() {
+    std::ostringstream out;
+    const char* candidates[] = {"libOpenCL.so", "libOpenCL.so.1", "/vendor/lib64/libOpenCL.so",
+                                "/system/vendor/lib64/libOpenCL.so"};
+    void* lib = nullptr;
+    for (const char* name : candidates) {
+        lib = dlopen(name, RTLD_NOW);
+        if (lib != nullptr) break;
+    }
+    if (lib == nullptr) {
+        out << "libOpenCL.so: 不存在（容器未暴露 OpenCL 驱动）\n";
+        return out.str();
+    }
+    auto fpPlatforms = reinterpret_cast<cl_int (*)(cl_uint, cl_platform_id*, cl_uint*)>(
+        dlsym(lib, "clGetPlatformIDs"));
+    auto fpDevices = reinterpret_cast<cl_int (*)(cl_platform_id, cl_ulong, cl_uint, cl_device_id*, cl_uint*)>(
+        dlsym(lib, "clGetDeviceIDs"));
+    auto fpDevInfo = reinterpret_cast<cl_int (*)(cl_device_id, cl_uint, size_t, void*, size_t*)>(
+        dlsym(lib, "clGetDeviceInfo"));
+    if (fpPlatforms == nullptr || fpDevices == nullptr || fpDevInfo == nullptr) {
+        out << "libOpenCL.so: 存在但符号不全\n";
+        dlclose(lib);
+        return out.str();
+    }
+    cl_uint np = 0;
+    cl_int err = fpPlatforms(0, nullptr, &np);
+    out << "OpenCL 平台数: " << (err == 0 ? std::to_string(np) : ("查询失败 err=" + std::to_string(err))) << "\n";
+    if (err == 0 && np > 0) {
+        std::vector<cl_platform_id> plats(np);
+        fpPlatforms(np, plats.data(), nullptr);
+        const cl_ulong CL_DEVICE_TYPE_ALL = 0xFFFFFFFF;
+        const cl_uint CL_DEVICE_NAME = 0x102B, CL_DEVICE_VENDOR = 0x102C;
+        for (cl_uint i = 0; i < np; ++i) {
+            cl_uint nd = 0;
+            fpDevices(plats[i], CL_DEVICE_TYPE_ALL, 0, nullptr, &nd);
+            for (cl_uint d = 0; d < nd; ++d) {
+                std::vector<cl_device_id> devs(nd);
+                fpDevices(plats[i], CL_DEVICE_TYPE_ALL, nd, devs.data(), nullptr);
+                char name[256] = {0}, vendor[256] = {0};
+                fpDevInfo(devs[d], CL_DEVICE_NAME, sizeof(name), name, nullptr);
+                fpDevInfo(devs[d], CL_DEVICE_VENDOR, sizeof(vendor), vendor, nullptr);
+                out << "  [p" << i << " d" << d << "] " << name << " (" << vendor << ")\n";
+            }
+        }
+    }
+    dlclose(lib);
+    return out.str();
+}
+
+}  // namespace
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_qwenpaint_SdEngine_nativeProbeHardware(JNIEnv* env, jclass /*clazz*/) {
+    std::ostringstream out;
+    out << "== Vulkan 计算探测 ==\n" << probeVulkan() << "\n";
+    out << "== OpenCL 探测 ==\n" << probeOpenCL() << "\n";
+    out << "== 说明 ==\n"
+        << "· 发现 INTEGRATED_GPU 且有 Vulkan ≥1.1：可启用 ggml Vulkan 后端，扩散模型可走 GPU 加速\n"
+        << "· NNAPI（麒麟 NPU 的 Android 入口）无公开枚举接口，需 TFLite 委托实测，本探测不覆盖\n"
+        << "· 麒麟 NPU 的 CANN Kit/NNRt 是鸿蒙原生 API，Android 容器理论上不可达\n";
+    std::string s = out.str();
+    LOGI("probe:\n%s", s.c_str());
+    return env->NewStringUTF(s.c_str());
+}
