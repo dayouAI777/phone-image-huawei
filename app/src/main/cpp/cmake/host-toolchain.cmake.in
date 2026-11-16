@@ -1,0 +1,21 @@
+# Toolchain used to build the *host* helper `vulkan-shaders-gen` while the rest of
+# the build is cross-compiled for Android. Values are substituted by the parent
+# CMakeLists.txt at configure time.
+set(CMAKE_SYSTEM_NAME Windows)
+
+set(CMAKE_C_COMPILER   "@QWENPAINT_HOST_CC@")
+set(CMAKE_CXX_COMPILER "@QWENPAINT_HOST_CXX@")
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER)
+
+set(CMAKE_BUILD_TYPE Release)
+# Fully static: the generated helper must run on this machine without needing
+# libstdc++-6.dll / libgcc_s_seh-1.dll / msvcrt shims next to it.
+set(CMAKE_C_FLAGS   "-O2 -static")
+set(CMAKE_CXX_FLAGS "-O2 -static")
+
+# The Android outer build passes CMAKE_MAKE_PROGRAM on the command line, but the
+# ExternalProject sub-configure does not inherit it, so Ninja would not be found.
+set(CMAKE_MAKE_PROGRAM "@QWENPAINT_HOST_NINJA@" CACHE FILEPATH "")

@@ -19,6 +19,8 @@ data class ModelConfig(
     val wtype: String = "auto",
     val flashAttn: Boolean = false,
     val enableMmap: Boolean = true,
+    /** ggml 设备规范，如 "vulkan" / "cpu"；空串交给库自动选择 */
+    val backend: String = "",
     val paramsBackend: String = "",
     val maxVram: String = "",
 ) {
@@ -77,6 +79,7 @@ object SdEngine {
                 cfg.flashAttn,
                 cfg.enableMmap,
                 cfg.paramsBackend,
+                cfg.backend,
                 cfg.maxVram,
             )
             if (handle == 0L) {
@@ -142,6 +145,7 @@ object SdEngine {
         flashAttn: Boolean,
         enableMmap: Boolean,
         paramsBackend: String,
+        backend: String,
         maxVram: String,
     ): Long
 
@@ -161,6 +165,22 @@ object SdEngine {
     private external fun nativeFree(handle: Long)
     private external fun nativeVersion(): String
     private external fun nativeProbeHardware(): String
+    private external fun nativeListDevices(): String
+
+    /** ggml 实际编译进 so 的可用设备（"名称<TAB>说明" 每行一个） */
+    fun listDevices(): List<Pair<String, String>> = try {
+        nativeListDevices()
+            .lineSequence()
+            .mapNotNull { line ->
+                val trimmed = line.trim()
+                if (trimmed.isEmpty()) return@mapNotNull null
+                val tab = trimmed.indexOf('\t')
+                if (tab < 0) trimmed to "" else trimmed.substring(0, tab) to trimmed.substring(tab + 1)
+            }
+            .toList()
+    } catch (t: Throwable) {
+        emptyList()
+    }
 
     /** 探测容器暴露的硬件接口（Vulkan/OpenCL），结果可直接贴给开发者 */
     fun probeHardware(): String = try {

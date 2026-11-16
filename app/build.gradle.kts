@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// -Pqwenpaint.vulkan=true 编出带 ggml Vulkan 后端的 so（Maleoon GPU 路径）
+val useVulkan: Boolean = (project.findProperty("qwenpaint.vulkan") as String?)?.toBoolean() ?: false
+val versionCodeValue: Int = (project.findProperty("qwenpaint.versionCode") as String?)?.toInt() ?: 5
+val versionNameValue: String = (project.findProperty("qwenpaint.versionName") as String?) ?: "1.3.0"
+
 android {
     namespace = "com.qwenpaint"
     compileSdk = 34
@@ -13,8 +18,8 @@ android {
         applicationId = "com.qwenpaint"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = versionCodeValue
+        versionName = versionNameValue
 
         ndk {
             // 卓易通容器与真机均为 arm64，只出 arm64-v8a 减小体积
@@ -27,7 +32,8 @@ android {
                 cppFlags += listOf("-O3", "-fexceptions", "-frtti", "-DNDEBUG")
                 arguments += listOf(
                     "-DCMAKE_BUILD_TYPE=Release",
-                    "-DANDROID_STL=c++_shared"
+                    "-DANDROID_STL=c++_shared",
+                    "-DQWENPAINT_VULKAN=$useVulkan"
                 )
             }
         }

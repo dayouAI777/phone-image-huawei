@@ -1,13 +1,13 @@
 {
-  "versionCode": 4,
-  "versionName": "1.2.0",
-  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.2.0/qwenpaint-v1.2.0.apk",
+  "versionCode": 5,
+  "versionName": "1.3.0",
+  "url": "https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.3.0/qwenpaint-v1.3.0.apk",
   "mirrors": [
-    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.2.0/qwenpaint-v1.2.0.apk",
-    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.2.0/qwenpaint-v1.2.0.apk"
+    "https://gh-proxy.com/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.3.0/qwenpaint-v1.3.0.apk",
+    "https://ghfast.top/https://github.com/dayouAI777/phone-image-huawei/releases/download/v1.3.0/qwenpaint-v1.3.0.apk"
   ],
-  "sha256": "7fdbb25593b5e31497e1d2cdebffdfabc98cf8126e92f86448ac7e57421d2368",
-  "size": 33501085,
-  "notes": "新增「硬件探测」：一键检测卓易通容器暴露的 Vulkan/OpenCL 接口，为 GPU 加速可行性提供实测依据。",
+  "sha256": "9fefc05ffad93ef09ac1b97416f6db81095ec1a5cf83a227286cf2675ec9ecf8",
+  "size": 32956694,
+  "notes": "GPU 加速版：实测 Mate 70 Pro 的 Maleoon 920 暴露 Vulkan 1.3，已把 ggml Vulkan 后端编进 so。模型卡片新增「计算设备」，可在 GPU / CPU 之间切换；GPU 加载失败会自动退回 CPU。模型文件和设置全部保留，直接覆盖安装即可。",
   "force": false
 }

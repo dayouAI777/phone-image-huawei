@@ -59,7 +59,7 @@ data class ModelSet(
             return parts.joinToString(" · ")
         }
 
-    fun toConfig(policy: MemPolicy, threads: Int): ModelConfig {
+    fun toConfig(policy: MemPolicy, threads: Int, backend: String = ""): ModelConfig {
         val base = ModelConfig(
             modelPath = single?.absolutePath ?: "",
             diffusionPath = diffusion?.absolutePath ?: "",
@@ -69,6 +69,7 @@ data class ModelSet(
             clipLPath = clipL?.absolutePath ?: "",
             clipGPath = clipG?.absolutePath ?: "",
             t5Path = t5?.absolutePath ?: "",
+            backend = backend,
         )
         return when (policy) {
             MemPolicy.SAFE -> base.copy(

@@ -168,6 +168,7 @@ private fun AppScreen(vm: GenViewModel) {
                 onLoad = vm::loadModel,
                 onSelect = vm::selectSet,
                 onPolicy = vm::setPolicy,
+                onUseGpu = vm::setUseGpu,
                 onDownload = vm::downloadRecommended,
             )
 
@@ -490,6 +491,7 @@ private fun ModelCard(
     onLoad: () -> Unit,
     onSelect: (ModelSet) -> Unit,
     onPolicy: (MemPolicy) -> Unit,
+    onUseGpu: (Boolean) -> Unit,
     onDownload: () -> Unit,
 ) {
     Card(
@@ -572,6 +574,41 @@ private fun ModelCard(
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+            // 计算设备：只有编进了 Vulkan 后端才显示
+            if (state.gpuAvailable) {
+                Text("计算设备", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = state.useGpu,
+                        onClick = { onUseGpu(true) },
+                        label = { Text("GPU (Vulkan)", fontSize = 11.sp) },
+                        shape = RoundedCornerShape(9.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    )
+                    FilterChip(
+                        selected = !state.useGpu,
+                        onClick = { onUseGpu(false) },
+                        label = { Text("CPU", fontSize = 11.sp) },
+                        shape = RoundedCornerShape(9.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    )
+                }
+                Text(
+                    if (state.useGpu) "走 Maleoon GPU 做矩阵运算，通常快数倍；显存不够会自动退回 CPU"
+                    else "纯 CPU（NEON）推理，慢但稳，适合大分辨率或显存紧张时",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+            }
+
             Text("内存策略", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 MemPolicy.entries.forEach { p ->

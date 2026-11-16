@@ -21,6 +21,10 @@ data class UiState(
     val modelSets: List<ModelSet> = emptyList(),
     val currentSet: ModelSet? = null,
     val policy: MemPolicy = MemPolicy.BALANCED,
+    // ---- 计算设备（GPU / CPU）----
+    val gpuAvailable: Boolean = false,
+    val useGpu: Boolean = true,
+    val deviceNames: List<Pair<String, String>> = emptyList(),
     val engineReady: Boolean = false,
     val loadingModel: Boolean = false,
     val generating: Boolean = false,
@@ -58,6 +62,22 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         refreshModels()
+        refreshDevices()
+    }
+
+    /** 读取 so 里实际编译进去的 ggml 后端（CPU 恒定存在，Vulkan 视构建而定） */
+    fun refreshDevices() {
+        viewModelScope.launch {
+            val devices = withContext(Dispatchers.IO) { SdEngine.listDevices() }
+            val hasGpu = devices.any { it.first.contains("vulkan", ignoreCase = true) }
+            _state.update {
+                it.copy(gpuAvailable = hasGpu, useGpu = hasGpu, deviceNames = devices)
+            }
+        }
+    }
+
+    fun setUseGpu(useGpu: Boolean) {
+        _state.update { if (it.gpuAvailable) it.copy(useGpu = useGpu, engineReady = false) else it }
     }
 
     fun refreshModels() {
@@ -131,18 +151,33 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (_state.value.loadingModel || _state.value.generating) return
 
-        val cfg = set.toConfig(_state.value.policy, threads)
+        val wantGpu = _state.value.useGpu && _state.value.gpuAvailable
+        val cfg = set.toConfig(_state.value.policy, threads, if (wantGpu) "vulkan" else "cpu")
         viewModelScope.launch {
             _state.update {
-                it.copy(loadingModel = true, error = null, message = "正在加载模型，大模型可能需 1-3 分钟…")
+                it.copy(
+                    loadingModel = true, error = null,
+                    message = if (wantGpu) "正在加载模型到 GPU（Vulkan）…" else "正在加载模型（CPU），大模型可能需 1-3 分钟…",
+                )
             }
-            val result = withContext(Dispatchers.Default) { SdEngine.loadModel(cfg) }
+            var result = withContext(Dispatchers.Default) { SdEngine.loadModel(cfg) }
+            // GPU 路径失败时自动退回 CPU，避免一次显存不足就把用户卡死
+            if (result.isFailure && wantGpu) {
+                _state.update { it.copy(message = "GPU 加载失败，正在回退 CPU 重试…") }
+                val fallback = withContext(Dispatchers.Default) {
+                    SdEngine.loadModel(cfg.copy(backend = "cpu"))
+                }
+                if (fallback.isSuccess) {
+                    _state.update { it.copy(useGpu = false) }
+                    result = fallback
+                }
+            }
             result.onSuccess {
                 _state.update {
                     it.copy(
                         loadingModel = false,
                         engineReady = true,
-                        message = "模型已加载 · ${cfg.threads} 线程 · ${_state.value.policy.label}",
+                        message = "模型已加载 · ${if (wantGpu) "GPU (Vulkan)" else "CPU"} · ${cfg.threads} 线程 · ${_state.value.policy.label}",
                     )
                 }
             }.onFailure { e ->
@@ -150,7 +185,7 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         loadingModel = false,
                         engineReady = false,
-                        error = "加载失败：${e.message}\n若为内存不足，请切到「省内存」档再试。",
+                        error = "加载失败：${e.message}\n若为内存不足，请切到「省内存」档、或关闭 GPU 加速再试。",
                     )
                 }
             }

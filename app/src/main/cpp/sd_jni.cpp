@@ -128,6 +128,18 @@ Java_com_qwenpaint_SdEngine_nativeVersion(JNIEnv* env, jobject /*thiz*/) {
     return env->NewStringUTF("sdcpp-kv-api/2026");
 }
 
+// Enumerates the ggml devices compiled into this .so (CPU always, Vulkan when the
+// GPU build is in use). Format: "name<TAB>description" per line.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_qwenpaint_SdEngine_nativeListDevices(JNIEnv* env, jobject /*thiz*/) {
+    size_t need = sd_list_devices(nullptr, 0);
+    if (need == 0) return env->NewStringUTF("");
+    std::vector<char> buf(need + 1, '\0');
+    size_t got = sd_list_devices(buf.data(), buf.size());
+    if (got > buf.size()) got = buf.size();
+    return env->NewStringUTF(std::string(buf.data(), got).c_str());
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_qwenpaint_SdEngine_nativeInit(JNIEnv* env, jobject /*thiz*/,
                                        jstring jModelPath,
@@ -143,6 +155,7 @@ Java_com_qwenpaint_SdEngine_nativeInit(JNIEnv* env, jobject /*thiz*/,
                                        jboolean jFlashAttn,
                                        jboolean jEnableMmap,
                                        jstring jParamsBackend,
+                                       jstring jBackend,
                                        jstring jMaxVram) {
     if (g_clsEngine == nullptr) {
         jclass local = env->FindClass("com/qwenpaint/SdEngine");
@@ -171,6 +184,7 @@ Java_com_qwenpaint_SdEngine_nativeInit(JNIEnv* env, jobject /*thiz*/,
     const std::string t5Path        = jstr(env, jT5Path);
     const std::string wtype         = jstr(env, jWtype);
     const std::string paramsBackend = jstr(env, jParamsBackend);
+    const std::string backend       = jstr(env, jBackend);
     const std::string maxVram       = jstr(env, jMaxVram);
 
     if (modelPath.empty() && diffusionPath.empty()) {
@@ -194,6 +208,7 @@ Java_com_qwenpaint_SdEngine_nativeInit(JNIEnv* env, jobject /*thiz*/,
     ok = ok && setStr(opt, "clip_g_path", clipGPath);
     ok = ok && setStr(opt, "t5xxl_path", t5Path);
     ok = ok && setStr(opt, "params_backend", paramsBackend);
+    ok = ok && setStr(opt, "backend", backend);
     ok = ok && setStr(opt, "max_vram", maxVram);
     ok = ok && setInt(opt, "n_threads", jThreads > 0 ? jThreads : 4);
     ok = ok && setStr(opt, "wtype", wtype.empty() ? std::string("auto") : wtype);
@@ -218,7 +233,10 @@ Java_com_qwenpaint_SdEngine_nativeInit(JNIEnv* env, jobject /*thiz*/,
     h->ctx = ctx;
 
     sd_set_progress_callback(onProgress, nullptr);
-    LOGI("engine ready: model=%s dit=%s threads=%d", modelPath.c_str(), diffusionPath.c_str(), jThreads);
+    LOGI("engine ready: model=%s dit=%s threads=%d backend=%s params_backend=%s",
+         modelPath.c_str(), diffusionPath.c_str(), jThreads,
+         backend.empty() ? "auto" : backend.c_str(),
+         paramsBackend.empty() ? "auto" : paramsBackend.c_str());
     return reinterpret_cast<jlong>(h);
 }
 
