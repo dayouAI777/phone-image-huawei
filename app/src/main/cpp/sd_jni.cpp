@@ -5,7 +5,10 @@
 #include <android/log.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <new>
 #include <string>
 #include <vector>
@@ -24,6 +27,16 @@ jmethodID g_midProgress = nullptr;
 
 std::atomic<bool> g_cancelRequested{false};
 
+// ---- 耗时统计 ----
+// sdcpp 的进度回调是进程级的，采样在生成线程里同步跑，所以这几个全局量
+// 只有「生成线程写、UI 线程读」两种访问，用 mutex 保住最后一次结果即可。
+std::mutex g_timingMutex;
+std::string g_lastTiming;
+std::chrono::steady_clock::time_point g_genStart;
+std::atomic<bool>  g_firstStepSeen{false};
+std::atomic<float> g_encodeSec{-1.f};
+std::atomic<float> g_lastStepAt{-1.f};
+
 struct EngineHandle {
     sd_ctx_t* ctx = nullptr;
 };
@@ -35,7 +48,7 @@ std::string lastError() {
 
 // ---------------------------------------------------------------- progress
 
-void pushProgress(int completed, int total, const char* stage) {
+void pushProgress(int completed, int total, float seconds, const char* stage) {
     if (g_vm == nullptr || g_clsEngine == nullptr || g_midProgress == nullptr) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -48,6 +61,7 @@ void pushProgress(int completed, int total, const char* stage) {
         env->CallStaticVoidMethod(g_clsEngine, g_midProgress,
                                   static_cast<jint>(completed),
                                   static_cast<jint>(total),
+                                  static_cast<jfloat>(seconds),
                                   jStage);
         if (jStage != nullptr) env->DeleteLocalRef(jStage);
         if (env->ExceptionCheck()) env->ExceptionClear();
@@ -56,9 +70,17 @@ void pushProgress(int completed, int total, const char* stage) {
 }
 
 // sdcpp installs this process-wide, not per-context.
-void onProgress(int step, int steps, float /*time*/, void* /*data*/) {
+// time 是「本步耗时」（秒），sdcpp 内部按 s/it 显示；第一次回调代表文本编码已结束。
+void onProgress(int step, int steps, float time, void* /*data*/) {
     if (g_cancelRequested.load()) return;
-    pushProgress(step, steps, "sampling");
+    if (!g_firstStepSeen.exchange(true)) {
+        const float enc = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() - g_genStart).count();
+        g_encodeSec.store(enc);
+    }
+    g_lastStepAt.store(std::chrono::duration<float>(
+        std::chrono::steady_clock::now() - g_genStart).count());
+    pushProgress(step, steps, time, "sampling");
 }
 
 // ---------------------------------------------------------------- helpers
@@ -128,6 +150,13 @@ Java_com_qwenpaint_SdEngine_nativeVersion(JNIEnv* env, jobject /*thiz*/) {
     return env->NewStringUTF("sdcpp-kv-api/2026");
 }
 
+// 最近一次生成的耗时明细（文本编码 / 采样 / 出图），由 nativeGenerate 汇总
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_qwenpaint_SdEngine_nativeLastTiming(JNIEnv* env, jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lk(g_timingMutex);
+    return env->NewStringUTF(g_lastTiming.c_str());
+}
+
 // Enumerates the ggml devices compiled into this .so (CPU always, Vulkan when the
 // GPU build is in use). Format: "name<TAB>description" per line.
 extern "C" JNIEXPORT jstring JNICALL
@@ -167,7 +196,7 @@ Java_com_qwenpaint_SdEngine_nativeInit(JNIEnv* env, jobject /*thiz*/,
         g_clsEngine = static_cast<jclass>(env->NewGlobalRef(local));
         env->DeleteLocalRef(local);
         g_midProgress = env->GetStaticMethodID(g_clsEngine, "onNativeProgress",
-                                              "(IILjava/lang/String;)V");
+                                              "(IIFLjava/lang/String;)V");
         if (g_midProgress == nullptr) {
             env->ExceptionClear();
             LOGE("onNativeProgress signature mismatch; progress disabled");
@@ -293,7 +322,12 @@ Java_com_qwenpaint_SdEngine_nativeGenerate(JNIEnv* env, jobject /*thiz*/,
         return nullptr;
     }
 
-    pushProgress(0, jSteps, "text-encode");
+    g_cancelRequested.store(false);
+    g_genStart = std::chrono::steady_clock::now();
+    g_firstStepSeen.store(false);
+    g_encodeSec.store(-1.f);
+    g_lastStepAt.store(-1.f);
+    pushProgress(0, jSteps, 0.f, "text-encode");
 
     sd_result_t* result = nullptr;
     sd_status_t st = sd_generate_image(h->ctx, opt, &result);
@@ -305,7 +339,9 @@ Java_com_qwenpaint_SdEngine_nativeGenerate(JNIEnv* env, jobject /*thiz*/,
         return nullptr;
     }
 
-    pushProgress(jSteps, jSteps, "vae-decode");
+    const float totalSec = std::chrono::duration<float>(
+        std::chrono::steady_clock::now() - g_genStart).count();
+    pushProgress(jSteps, jSteps, 0.f, "vae-decode");
 
     const sd_tensor_t* img = sd_result_get_image(result, 0);
     if (img == nullptr || sd_tensor_rank(img) < 3) {
@@ -352,6 +388,29 @@ Java_com_qwenpaint_SdEngine_nativeGenerate(JNIEnv* env, jobject /*thiz*/,
 
     env->SetIntArrayRegion(out, 0, pixelCount, argb.data());
     sd_result_free(result);
+
+    // 汇总耗时，供 UI 显示：把「慢」拆成编码 / 采样 / 出图三段，才知道该往哪优化
+    {
+        const float enc  = g_encodeSec.load();
+        const float last = g_lastStepAt.load();
+        const float sampleSec = (last > 0.f && enc >= 0.f) ? (last - enc) : -1.f;
+        const float tailSec   = (last > 0.f) ? (totalSec - last) : totalSec;
+        char buf[192];
+        if (enc >= 0.f) {
+            std::snprintf(buf, sizeof(buf),
+                          "总 %.1fs · 文本编码 %.1fs · 采样 %d 步 %.1fs（%.1fs/步）· 出图 %.1fs",
+                          totalSec, enc, static_cast<int>(jSteps),
+                          sampleSec < 0.f ? 0.f : sampleSec,
+                          (jSteps > 0 && sampleSec > 0.f)
+                              ? sampleSec / static_cast<float>(jSteps) : 0.f,
+                          tailSec < 0.f ? 0.f : tailSec);
+        } else {
+            std::snprintf(buf, sizeof(buf), "总 %.1fs", totalSec);
+        }
+        std::lock_guard<std::mutex> lk(g_timingMutex);
+        g_lastTiming = buf;
+        LOGI("timing: %s", buf);
+    }
 
     LOGI("generated %lldx%lld ch=%lld", static_cast<long long>(width),
          static_cast<long long>(height), static_cast<long long>(channels));

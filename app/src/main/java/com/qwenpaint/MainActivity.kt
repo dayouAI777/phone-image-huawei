@@ -173,6 +173,7 @@ private fun AppScreen(vm: GenViewModel) {
                 onSelect = vm::selectSet,
                 onPolicy = vm::setPolicy,
                 onUseGpu = vm::setUseGpu,
+                onThreads = vm::setThreads,
                 onDownload = vm::downloadRecommended,
             )
 
@@ -240,6 +241,7 @@ private fun AppScreen(vm: GenViewModel) {
                     completed = state.progressCompleted,
                     total = state.progressTotal,
                     stage = state.progressStage,
+                    seconds = state.stepSeconds,
                     onCancel = vm::cancel,
                 )
             }
@@ -300,6 +302,14 @@ private fun AppScreen(vm: GenViewModel) {
                             .aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())
                             .clip(RoundedCornerShape(18.dp)),
                     )
+                    if (state.lastTiming.isNotBlank()) {
+                        Text(
+                            state.lastTiming,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -527,6 +537,7 @@ private fun ModelCard(
     onSelect: (ModelSet) -> Unit,
     onPolicy: (MemPolicy) -> Unit,
     onUseGpu: (Boolean) -> Unit,
+    onThreads: (Int) -> Unit,
     onDownload: () -> Unit,
 ) {
     Card(
@@ -664,6 +675,32 @@ private fun ModelCard(
                 fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            // 线程数：麒麟 9020 是 4 大核 + 4 小核，ggml 每个算子都要等齐所有线程，
+            // 开 8 线程反而被小核拖慢。默认 4，想验证可以挨个试。
+            Text("线程数 · 改完需重新加载模型", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf(4, 6, 8).forEach { n ->
+                    FilterChip(
+                        selected = state.userThreads == n,
+                        onClick = { onThreads(n) },
+                        label = { Text("$n", fontSize = 11.sp) },
+                        shape = RoundedCornerShape(9.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    )
+                }
+                Text(
+                    if (state.userThreads == 4) "只用大核，通常最快" else "小核会拖慢同步等齐",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             if (state.downloadProgress != null) {
                 LinearProgressIndicator(
@@ -837,7 +874,13 @@ private fun ParamCard(
 }
 
 @Composable
-private fun ProgressBlock(completed: Int, total: Int, stage: String, onCancel: () -> Unit) {
+private fun ProgressBlock(
+    completed: Int,
+    total: Int,
+    stage: String,
+    seconds: Float,
+    onCancel: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -845,7 +888,11 @@ private fun ProgressBlock(completed: Int, total: Int, stage: String, onCancel: (
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (total > 0) "$stage  $completed / $total" else stage,
+                buildString {
+                    if (total > 0) append("$stage  $completed / $total") else append(stage)
+                    // 每步耗时是判断「卡在采样」还是「卡在出图」的唯一依据
+                    if (seconds > 0.05f) append("  ·  %.1fs/步".format(seconds))
+                },
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

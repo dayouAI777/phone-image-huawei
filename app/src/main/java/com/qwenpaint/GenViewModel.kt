@@ -31,6 +31,9 @@ data class UiState(
     val progressCompleted: Int = 0,
     val progressTotal: Int = 0,
     val progressStage: String = "",
+    val stepSeconds: Float = 0f,
+    val lastTiming: String = "",
+    val userThreads: Int = 4,
     val image: Bitmap? = null,
     val lastSeed: Long = -1L,
     val isTurbo: Boolean = true,
@@ -53,12 +56,19 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    private val threads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+    // 麒麟 9020 是 4 大核 + 4 小核，ggml 每个算子都要等全部线程到齐，
+    // 线程数超过性能核数反而被小核拖慢。默认 4，可手动加到 6/8 对比。
+    private var threads: Int = 4
 
     init {
-        SdEngine.setProgressListener { completed, total, stage ->
+        SdEngine.setProgressListener { completed, total, seconds, stage ->
             _state.update {
-                it.copy(progressCompleted = completed, progressTotal = total, progressStage = stage)
+                it.copy(
+                    progressCompleted = completed,
+                    progressTotal = total,
+                    progressStage = stage,
+                    stepSeconds = seconds,
+                )
             }
         }
         refreshModels()
@@ -97,6 +107,14 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPolicy(policy: MemPolicy) {
         _state.update { it.copy(policy = policy, engineReady = false) }
+    }
+
+    /** 线程数在加载模型时喂给 ggml，改了要重新加载才生效 */
+    fun setThreads(n: Int) {
+        threads = n.coerceIn(2, 8)
+        _state.update {
+            it.copy(userThreads = threads, message = "线程数设为 ${threads}，重新加载模型后生效")
+        }
     }
 
     fun importModel(uri: Uri) {
@@ -227,6 +245,8 @@ class GenViewModel(app: Application) : AndroidViewModel(app) {
                     generating = false,
                     image = bitmap ?: it.image,
                     progressStage = if (bitmap != null) "完成" else "",
+                    stepSeconds = 0f,
+                    lastTiming = if (bitmap != null) SdEngine.lastTiming() else it.lastTiming,
                     message = if (bitmap != null) "seed = $actualSeed" else it.message,
                 )
             }

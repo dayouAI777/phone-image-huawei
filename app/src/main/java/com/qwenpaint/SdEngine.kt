@@ -31,15 +31,15 @@ data class ModelConfig(
 object SdEngine {
 
     @Volatile
-    private var progressListener: ((completed: Int, total: Int, stage: String) -> Unit)? = null
+    private var progressListener: ((completed: Int, total: Int, seconds: Float, stage: String) -> Unit)? = null
 
-    /** 由 native 层回调，勿改名（JNI 按名称绑定） */
+    /** 由 native 层回调，勿改名（JNI 按名称绑定）。seconds = 本步耗时，sdcpp 只在采样阶段给值 */
     @JvmStatic
-    fun onNativeProgress(completed: Int, total: Int, stage: String) {
-        progressListener?.invoke(completed, total, stage)
+    fun onNativeProgress(completed: Int, total: Int, seconds: Float, stage: String) {
+        progressListener?.invoke(completed, total, seconds, stage)
     }
 
-    fun setProgressListener(listener: ((Int, Int, String) -> Unit)?) {
+    fun setProgressListener(listener: ((Int, Int, Float, String) -> Unit)?) {
         progressListener = listener
     }
 
@@ -130,6 +130,13 @@ object SdEngine {
 
     fun version(): String = if (loaded) nativeVersion() else "native 未加载"
 
+    /** 上一次生成的耗时明细，例如「总 41.2s · 文本编码 3.1s · 采样 4 步 30.5s…」 */
+    fun lastTiming(): String = try {
+        if (loaded) nativeLastTiming() else ""
+    } catch (t: Throwable) {
+        ""
+    }
+
     // ---- native（参数顺序必须与 sd_jni.cpp 严格一致）----
     private external fun nativeInit(
         modelPath: String,
@@ -164,6 +171,7 @@ object SdEngine {
     private external fun nativeCancel(handle: Long)
     private external fun nativeFree(handle: Long)
     private external fun nativeVersion(): String
+    private external fun nativeLastTiming(): String
     private external fun nativeProbeHardware(): String
     private external fun nativeListDevices(): String
 
